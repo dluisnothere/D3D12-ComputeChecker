@@ -253,7 +253,7 @@ void ComputeChecker::LoadAssets() {
 			&heapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&textureDesc,
-			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			nullptr,
 			IID_PPV_ARGS(&m_checkerTexture)
 		);
@@ -425,26 +425,42 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->Reset(m_graphicsCommandAllocator.Get(), m_computePipelineState.Get());
 
 	// Set neccessary state
+	m_graphicsCommandList->SetPipelineState(m_graphicsPipelineState.Get());
 	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
-	// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
-	ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
-	m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+	if (!m_computeShaded) {
+		// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
+		ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
+		m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+		m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+
+		D3D12_RESOURCE_BARRIER textureBarrier = {};
+		textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		textureBarrier.Transition.pResource = m_checkerTexture.Get();
+		textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
+		textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+		m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
+
+		m_computeShaded = true;
+	}
+	else {
+	}
 
 	// TODO: What does this function do?
 	m_graphicsCommandList->RSSetViewports(1, &m_viewport);
 	m_graphicsCommandList->RSSetScissorRects(1, &m_scissorRect);
 
-	// Add a resource barrier for the resulting texture
-	D3D12_RESOURCE_BARRIER textureBarrier = {};
-	textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	textureBarrier.Transition.pResource = m_checkerTexture.Get();
-	textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
-	textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	//// Add a resource barrier for the resulting texture
+	//D3D12_RESOURCE_BARRIER textureBarrier = {};
+	//textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	//textureBarrier.Transition.pResource = m_checkerTexture.Get();
+	//textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	//textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
+	//textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
+	//m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
 
 	// Indicate that the back buffer will be used as a render target
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -459,6 +475,9 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	m_graphicsCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
 	m_graphicsCommandList->DrawInstanced(6, 1, 0, 0);
+
+	// Set neccessary state
+	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
 	// Back buffer will now present
 	CD3DX12_RESOURCE_BARRIER transition2 = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

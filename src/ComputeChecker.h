@@ -47,6 +47,9 @@ private:
 	// Type of buffer 
 	static const UINT64 Framecount = 2;
 
+	// TODO: DUMB DEBUG FLAG TO KEEP TRACK OF WHETHER THE COMPUTE SHADER HAS ALREADY RUN
+	bool m_computeShaded = false;
+
 
 	// Pipeline objects
 	ComPtr<ID3D12Device> m_device;
