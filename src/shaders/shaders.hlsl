@@ -8,8 +8,7 @@ struct PSInput
 PSInput VSMain(float2 position : POSITION, float2 texcoord : TEXCOORD0)
 {
 	PSInput result;
-	// result.position = float4(position.x, position.y, 0.0f, 1.0f);
-	result.position = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	result.position = float4(position.x, position.y, 0.0f, 1.0f);
 	result.texcoord = texcoord;
 	return result;
 }
