@@ -30,14 +30,15 @@ void CSMain( uint3 DTid : SV_DispatchThreadID )
 {
 	int x = DTid.x;
 	int y = DTid.y;
+    outTexture[DTid.xy] = float4(1.0, 0.0, 0.0, 1.0);
 
 	// Create the checkerboard pattern
-    if ((x + y) % 2 == 0)
-    {
-        outTexture[DTid.xy] = float4(1.0, 1.0, 1.0, 1.0);  // white
-    }
-    else
-    {
-        outTexture[DTid.xy] = float4(0.0, 0.0, 0.0, 1.0);  // black
-    }
+    // if ((x + y) % 2 == 0)
+    // {
+    //     outTexture[DTid.xy] = float4(1.0, 1.0, 1.0, 1.0);  // white
+    // }
+    // else
+    // {
+    //     outTexture[DTid.xy] = float4(1.0, 0.0, 0.0, 1.0);  // red
+    // }
 }

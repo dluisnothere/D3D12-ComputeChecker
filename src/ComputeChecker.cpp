@@ -140,16 +140,18 @@ bool ComputeChecker::LoadPipeline() {
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
 	m_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_rtvHeap));
+	m_rtvHeap->SetName(L"my rtv");
 
 	m_rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 	// Create shader resource view descriptor heap
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 1;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	D3D12_DESCRIPTOR_HEAP_DESC srvUavHeapDesc = {};
+	srvUavHeapDesc.NumDescriptors = 2;
+	srvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
-	m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap));
+	m_device->CreateDescriptorHeap(&srvUavHeapDesc, IID_PPV_ARGS(&m_srvUavHeap));
+	m_srvUavHeap->SetName(L"my srv");
 
 	m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
@@ -221,6 +223,7 @@ void ComputeChecker::LoadAssets() {
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
 		// Root parameter for descriptor table
+		// DescriptorTable for compute pipeline UAV.
 		D3D12_ROOT_PARAMETER rootParameter = {};
 		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
@@ -273,7 +276,9 @@ void ComputeChecker::LoadAssets() {
 		srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-		m_device->CreateShaderResourceView(m_checkerTexture.Get(), &srvDesc, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+		D3D12_CPU_DESCRIPTOR_HANDLE handleStart = m_srvUavHeap->GetCPUDescriptorHandleForHeapStart();
+
+		m_device->CreateShaderResourceView(m_checkerTexture.Get(), &srvDesc, handleStart);
 
 		// Create UAV for texture
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -281,7 +286,11 @@ void ComputeChecker::LoadAssets() {
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		uavDesc.Texture2D.MipSlice = 0;
 
-		m_device->CreateUnorderedAccessView(m_checkerTexture.Get(), nullptr, &uavDesc, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+		// Offset to the next slot
+		size_t descriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = { handleStart.ptr + descriptorSize };
+
+		m_device->CreateUnorderedAccessView(m_checkerTexture.Get(), nullptr, &uavDesc, uavHandle);
 	}
 	
 	// Compile the shaders
@@ -462,9 +471,9 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 
 	if (!m_textureTransitioned) {
 		// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
-		ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
+		ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get() };
 		m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-		m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+		m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
 		D3D12_RESOURCE_BARRIER textureBarrier = {};
 		textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -497,7 +506,7 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	m_graphicsCommandList->IASetIndexBuffer(&m_indexBufferView);
 	m_graphicsCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-	m_graphicsCommandList->DrawInstanced(6, 1, 0, 0);
+	m_graphicsCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 	// Set neccessary state
 	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
@@ -523,7 +532,7 @@ void ComputeChecker::PopulateComputeCommandList() {
 
 	// Execute the compute shader
 	m_computeCommandList->SetPipelineState(m_computePipelineState.Get());
-	m_computeCommandList->Dispatch(1, 1, 1);
+	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
 
 	// Close the command list
 	m_computeCommandList->Close();

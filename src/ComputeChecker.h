@@ -61,7 +61,7 @@ private:
 
 	// used in the compute pipeline
 	ComPtr<ID3D12CommandQueue> m_computeCommandQueue;
-	ComPtr<ID3D12DescriptorHeap> m_srvHeap;
+	ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
 	ComPtr<ID3D12RootSignature> m_computeRootSignature;
 	ComPtr<ID3D12PipelineState> m_computePipelineState;
 	UINT m_srvDescriptorSize;
