@@ -32,15 +32,8 @@ void ComputeChecker::OnInit() {
 	ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
 	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	D3D12_RESOURCE_BARRIER barrier = {};
-	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	barrier.Transition.pResource = m_checkerTexture.Get();
-	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-
 	// TODO: this might have to be the compute command list.... not sure
-	m_graphicsCommandList->ResourceBarrier(1, &barrier);
+	// m_graphicsCommandList->ResourceBarrier(1, &barrier);
 }
 
 bool ComputeChecker::LoadPipeline() {
@@ -153,29 +146,91 @@ bool ComputeChecker::LoadPipeline() {
 	m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap));
 
 	m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	// create frame resources
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// For each frame, create an RTV handle
+	for (UINT n = 0; n < Framecount; n++) {
+		m_swapChain->GetBuffer(n, IID_PPV_ARGS(&m_renderTargets[n]));
+		m_device->CreateRenderTargetView(m_renderTargets[n].Get(), nullptr, rtvHandle);
+		rtvHandle.Offset(1, m_rtvDescriptorSize);
+	}
+
+	// Create the command allocator for the compute command queue
+	m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(&m_computeCommandAllocator));
+
+	// Create command allocator for the graphics queue
+	m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_graphicsCommandAllocator));
+
 	return true;
 }
 
 void ComputeChecker::LoadAssets() {
 	// Create an empty root signature for graphics pipeline state object
 	{
-		CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-		rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+		// Create descriptor range for SRV (Texture 2D)
+		D3D12_DESCRIPTOR_RANGE srvRange = {};
+		srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		srvRange.NumDescriptors = 1;
+		srvRange.BaseShaderRegister = 0; // t0
+		srvRange.RegisterSpace = 0;
+		srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+		// Descriptor range for the sampler
+		D3D12_DESCRIPTOR_RANGE samplerRange = {};
+		samplerRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+		samplerRange.NumDescriptors = 1;
+		samplerRange.BaseShaderRegister = 0; // s0
+		samplerRange.RegisterSpace = 0;
+		samplerRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+		// Create root parameter for SRV and sampler
+		D3D12_ROOT_PARAMETER rootParameters[2] = {
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, {1, &srvRange}, D3D12_SHADER_VISIBILITY_PIXEL },
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, {1, &samplerRange}, D3D12_SHADER_VISIBILITY_PIXEL }
+		};
+
+		CD3DX12_ROOT_SIGNATURE_DESC gRootSignatureDesc;
+		gRootSignatureDesc.NumParameters = 2;
+		gRootSignatureDesc.pParameters = rootParameters;
+		gRootSignatureDesc.NumStaticSamplers = 0;
+		gRootSignatureDesc.pStaticSamplers = nullptr;
+		gRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 		ComPtr<ID3DBlob> signature;
 		ComPtr<ID3DBlob> error;
-		D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
+		D3D12SerializeRootSignature(&gRootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
 		m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_graphicsRootSignature));
 	}
 
 	// Create an empty root signature for compute pipeline state object
-{
-		CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-		rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+	{
+		// Create Descriptor range for UAV -> for the texture resource in the compute shader
+		D3D12_DESCRIPTOR_RANGE descriptorRange = {};
+		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+		descriptorRange.NumDescriptors = 1;
+		descriptorRange.BaseShaderRegister = 0; // register u0
+		descriptorRange.RegisterSpace = 0;
+		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+		// Root parameter for descriptor table
+		D3D12_ROOT_PARAMETER rootParameter = {};
+		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
+		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRange;
+		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+		CD3DX12_ROOT_SIGNATURE_DESC cRootSignatureDesc;
+		cRootSignatureDesc.NumParameters = 1;
+		cRootSignatureDesc.pParameters = &rootParameter;
+		cRootSignatureDesc.NumStaticSamplers = 0;
+		cRootSignatureDesc.pStaticSamplers = nullptr;
+		cRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
 		ComPtr<ID3DBlob> signature;
 		ComPtr<ID3DBlob> error;
-		D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
+		D3D12SerializeRootSignature(&cRootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
 		m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_computeRootSignature));
 	}
 
@@ -234,24 +289,15 @@ void ComputeChecker::LoadAssets() {
 	UINT compileFlags = 0;
 #endif
 
-	HRESULT hrc = D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, &computeShader, &error);
-	// DEBUG
-	if (FAILED(hrc)) {
-		OutputDebugStringA((char*)error->GetBufferPointer());
-	}
-
-	HRESULT hrv = D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &error);
-	// DEBUG
-	if (FAILED(hrv)) {
-		OutputDebugStringA((char*)error->GetBufferPointer());
-	}
+	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, &computeShader, &error);
+	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &error);
 	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr);
 
 
 	// Define vertex input layout
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD0",    0, DXGI_FORMAT_R32G32_FLOAT, 0, 8,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD",    0, DXGI_FORMAT_R32G32_FLOAT, 0, 8,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 	
 	// Create the compute pipeline state
@@ -281,8 +327,8 @@ void ComputeChecker::LoadAssets() {
 	m_device->CreateGraphicsPipelineState(&graphicsPsoDesc, IID_PPV_ARGS(&m_graphicsPipelineState));
 
 	// Create the command lists
-	m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeCommandAllocator.Get(), m_computePipelineState.Get(), IID_PPV_ARGS(&m_computeCommandList));
-	m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_graphicsCommandAllocator.Get(), m_graphicsPipelineState.Get(), IID_PPV_ARGS(&m_graphicsCommandList));
+	HRESULT hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeCommandAllocator.Get(), m_computePipelineState.Get(), IID_PPV_ARGS(&m_computeCommandList));
+	HRESULT hr2 = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_graphicsCommandAllocator.Get(), m_graphicsPipelineState.Get(), IID_PPV_ARGS(&m_graphicsCommandList));
 
 	// Close the command lists as their default starting states
 	m_computeCommandList->Close();
@@ -382,11 +428,23 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
 	// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
+	ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
+	m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 	m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
 
 	// TODO: What does this function do?
 	m_graphicsCommandList->RSSetViewports(1, &m_viewport);
 	m_graphicsCommandList->RSSetScissorRects(1, &m_scissorRect);
+
+	// Add a resource barrier for the resulting texture
+	D3D12_RESOURCE_BARRIER textureBarrier = {};
+	textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	textureBarrier.Transition.pResource = m_checkerTexture.Get();
+	textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
+	textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+	m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
 
 	// Indicate that the back buffer will be used as a render target
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);

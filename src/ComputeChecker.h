@@ -62,6 +62,9 @@ private:
 	ComPtr<ID3D12CommandAllocator> m_computeCommandAllocator;
 	ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
 
+	// Texture resource barrier
+	D3D12_RESOURCE_BARRIER m_textureBarrier;
+
 	// used in the graphics pipeline
 	ComPtr<ID3D12CommandQueue> m_graphicsCommandQueue;
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
