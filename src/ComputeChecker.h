@@ -10,6 +10,9 @@
 
 #include <stdint.h>
 
+// DEBUG
+#include "Helpers.h"
+
 using Microsoft::WRL::ComPtr;
 
 struct Vertex {
@@ -48,7 +51,7 @@ private:
 	static const UINT64 Framecount = 2;
 
 	// TODO: DUMB DEBUG FLAG TO KEEP TRACK OF WHETHER THE COMPUTE SHADER HAS ALREADY RUN
-	bool m_computeShaded = false;
+	bool m_textureTransitioned = false;
 
 
 	// Pipeline objects
@@ -84,6 +87,8 @@ private:
 	// App resources
 	ComPtr<ID3D12Resource> m_vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
+	ComPtr<ID3D12Resource> m_indexBuffer;
+	D3D12_INDEX_BUFFER_VIEW m_indexBufferView;
 
 
 	// synchronization objects

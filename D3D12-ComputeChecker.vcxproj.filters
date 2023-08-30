@@ -21,12 +21,21 @@
     <ClCompile Include="src\wWinMain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\vendor\stdafx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ComputeChecker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\d3dx12.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\vendor\stdafx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -24,10 +24,15 @@ std::wstring ComputeChecker::GetAssetFullPath(LPCWSTR assetName) {
 
 void ComputeChecker::OnInit() {
 	LoadPipeline();
+	WriteLog("Loaded Pipeline...");
+
 	LoadAssets();
+	WriteLog("Loaded Assets...");
 
 	// Populate the compute command list only once at the beginning
 	PopulateComputeCommandList();
+	WriteLog("Populated Command list...");
+
 	// Execute the compute command list only once at the beginning
 	ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
 	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
@@ -38,13 +43,14 @@ void ComputeChecker::OnInit() {
 
 bool ComputeChecker::LoadPipeline() {
 	UINT64 dxgiFactoryFlags = 0;
-
-	// Enable Direct X debug layer
+#if defined(_DEBUG)
+	//  Enable Direct X debug layer
 	ComPtr<ID3D12Debug> debugController;
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
 		debugController->EnableDebugLayer();
 		dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 	}
+#endif
 
 	// Create factory
 	ComPtr<IDXGIFactory6> ptrFactory6;
@@ -283,16 +289,16 @@ void ComputeChecker::LoadAssets() {
 	ComPtr<ID3DBlob> pixelShader;
 	ComPtr<ID3DBlob> vertexShader;
 	ComPtr<ID3DBlob> error;
+
 #if defined (_DEBUG)
 	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #else
 	UINT compileFlags = 0;
 #endif
 
-	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, &computeShader, &error);
-	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &error);
-	D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr);
-
+	D3DCompileFromFile(GetAssetFullPath(L"./shaders/shaders.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, &computeShader, &error);
+	D3DCompileFromFile(GetAssetFullPath(L"./shaders/shaders.hlsl").c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &error);
+	D3DCompileFromFile(GetAssetFullPath(L"./shaders/shaders.hlsl").c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr);
 
 	// Define vertex input layout
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
@@ -327,8 +333,8 @@ void ComputeChecker::LoadAssets() {
 	m_device->CreateGraphicsPipelineState(&graphicsPsoDesc, IID_PPV_ARGS(&m_graphicsPipelineState));
 
 	// Create the command lists
-	HRESULT hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeCommandAllocator.Get(), m_computePipelineState.Get(), IID_PPV_ARGS(&m_computeCommandList));
-	HRESULT hr2 = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_graphicsCommandAllocator.Get(), m_graphicsPipelineState.Get(), IID_PPV_ARGS(&m_graphicsCommandList));
+	m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeCommandAllocator.Get(), m_computePipelineState.Get(), IID_PPV_ARGS(&m_computeCommandList));
+	m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_graphicsCommandAllocator.Get(), m_graphicsPipelineState.Get(), IID_PPV_ARGS(&m_graphicsCommandList));
 
 	// Close the command lists as their default starting states
 	m_computeCommandList->Close();
@@ -336,10 +342,10 @@ void ComputeChecker::LoadAssets() {
 
 	// Create the vertexbuffer, which should just be a quad that fits the screen
 	Vertex screenQuadVertices[] = {
-		{-1.0f, -1.0f, 0.0f, 1.0f},
+		{-0.5f, -1.0f, 0.0f, 0.0f},
 		{-1.0f,  1.0f, 0.0f, 0.0f},
-		{ 1.0f,  1.0f, 1.0f, 0.0f},
-		{ 1.0f, -1.0f, 1.0f, 1.0f},
+		{ 1.0f,  1.0f, 0.0f, 0.0f},
+		{ 1.0f, -1.0f, 0.0f, 0.0f},
 	};
 
 	// Indices for the quad
@@ -348,9 +354,13 @@ void ComputeChecker::LoadAssets() {
 		0, 2, 3
 	};
 
-	const UINT64 vertexBufferSize = sizeof(screenQuadVertices);
+	const UINT vertexCount = 4;
+	const UINT64 vertexBufferSize = sizeof(Vertex) * vertexCount;
+
+	const UINT indexCount = 6;
 
 	// TODO: Optimize this by using default heaps instead of upload heaps
+	// Create  the vertex buffer committed resource
 	CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
 	m_device->CreateCommittedResource(
@@ -360,6 +370,16 @@ void ComputeChecker::LoadAssets() {
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&m_vertexBuffer));
+
+	// Create the index buffer committed resource using the same heap properties as the vertex buffer
+	CD3DX12_RESOURCE_DESC indexBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(screenQuadIndices));
+	m_device->CreateCommittedResource(
+		&heapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&indexBufferDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&m_indexBuffer));
 
 	// Copy the vertex data to the vertex buffer
 	UINT8* vertexDataBegin;
@@ -372,6 +392,18 @@ void ComputeChecker::LoadAssets() {
 	m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
 	m_vertexBufferView.StrideInBytes = sizeof(Vertex);
 	m_vertexBufferView.SizeInBytes = vertexBufferSize;
+
+	// Copy the index data to the index buffer
+	UINT8* indexDataBegin;
+	m_indexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&indexDataBegin));
+	memcpy(indexDataBegin, screenQuadIndices, sizeof(screenQuadIndices));
+	m_indexBuffer->Unmap(0, nullptr);
+
+	// Initialize index buffer view
+	m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+	m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+	m_indexBufferView.SizeInBytes = sizeof(uint16_t) * indexCount;
+
 
 	// Create synchronization objects adn wait until assets have been uploaded to the GPU
 	{
@@ -428,7 +460,7 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->SetPipelineState(m_graphicsPipelineState.Get());
 	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
-	if (!m_computeShaded) {
+	if (!m_textureTransitioned) {
 		// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
 		ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
 		m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
@@ -443,7 +475,7 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 
 		m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
 
-		m_computeShaded = true;
+		m_textureTransitioned = true;
 	}
 	else {
 	}
@@ -451,16 +483,6 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	// TODO: What does this function do?
 	m_graphicsCommandList->RSSetViewports(1, &m_viewport);
 	m_graphicsCommandList->RSSetScissorRects(1, &m_scissorRect);
-
-	//// Add a resource barrier for the resulting texture
-	//D3D12_RESOURCE_BARRIER textureBarrier = {};
-	//textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	//textureBarrier.Transition.pResource = m_checkerTexture.Get();
-	//textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	//textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // The state used for compute shader write
-	//textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-
-	//m_graphicsCommandList->ResourceBarrier(1, &textureBarrier);
 
 	// Indicate that the back buffer will be used as a render target
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -473,6 +495,7 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
 	m_graphicsCommandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 	m_graphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	m_graphicsCommandList->IASetIndexBuffer(&m_indexBufferView);
 	m_graphicsCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
 	m_graphicsCommandList->DrawInstanced(6, 1, 0, 0);
 

@@ -6,7 +6,10 @@
 
 #include <stdint.h>
 
+#include "vendor/stdafx.h"
+
 #include "ComputeChecker.h"
+// #include "Helpers.h"
 
 #define FRAMES 2
 #define WIDTH 1200
@@ -62,8 +65,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
+_Use_decl_annotations_
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-
 	ComputeChecker checkerSample = ComputeChecker(NUM_SQUARES_X, NUM_SQUARES_Y, WIDTH, HEIGHT);
 
 	// Create a window
@@ -106,6 +109,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			DispatchMessage(&msg);
 		}
 	}
+
 
 	checkerSample.OnDestroy();
 
