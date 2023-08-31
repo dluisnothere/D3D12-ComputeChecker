@@ -330,21 +330,6 @@ void ComputeChecker::LoadAssets() {
 			nullptr,
 			IID_PPV_ARGS(&m_readbackBuffer)
 		);
-
-		m_src = {};
-		m_src.pResource = m_checkerTexture.Get();
-		m_src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-		m_src.SubresourceIndex = 0;
-
-		m_dst = {};
-		m_dst.pResource = m_readbackBuffer.Get();
-		m_dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		m_dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		m_dst.PlacedFootprint.Footprint.Width = m_windowWidth;
-		m_dst.PlacedFootprint.Footprint.Height = m_windowHeight;
-		m_dst.PlacedFootprint.Footprint.Depth = 1;
-		m_dst.PlacedFootprint.Footprint.RowPitch = m_rowPitch;
-
 	}
 	
 	// Compile the shaders
@@ -491,6 +476,7 @@ void ComputeChecker::OnUpdate() {
 
 void ComputeChecker::OnRender() {
 	// DEBUG AND SEE IF THIS SHOWS UP
+	// TODO: move this to the OnInit() function eventually
 	// Populate the compute command list only once at the beginning
 	PopulateComputeCommandList();
 
@@ -604,10 +590,10 @@ void ComputeChecker::PopulateComputeCommandList() {
 	// Reset the command list
 	m_computeCommandList->Reset(m_computeCommandAllocator.Get(), m_computePipelineState.Get());
 
-	// Set the neccessary state
+	// Set the root signature contract
 	m_computeCommandList->SetComputeRootSignature(m_computeRootSignature.Get());
 
-	// Execute the compute shader
+	// Set pipeline state
 	m_computeCommandList->SetPipelineState(m_computePipelineState.Get());
 
 	// Set descriptor heaps
@@ -615,6 +601,7 @@ void ComputeChecker::PopulateComputeCommandList() {
 	m_computeCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
 	// Set compute root descriptor table
+	// It's telling the root descriptor that the table should be placed on the 0th index
 	m_computeCommandList->SetComputeRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
 	// Bind texture slot to u0 register?
