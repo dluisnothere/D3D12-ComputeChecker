@@ -617,6 +617,9 @@ void ComputeChecker::PopulateComputeCommandList() {
 	// Set compute root descriptor table
 	m_computeCommandList->SetComputeRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
+	// Bind texture slot to u0 register?
+	// m_computeCommandList->SetComputeRootUnorderedAccessView(0, m_checkerTexture->GetGPUVirtualAddress());
+
 	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
 
 	// Set a resource barrier transition from UAV to CopySource
