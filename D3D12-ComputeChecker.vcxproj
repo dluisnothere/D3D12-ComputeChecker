@@ -152,6 +152,7 @@
     <ClInclude Include="src\ComputeChecker.h" />
     <ClInclude Include="src\d3dx12.h" />
     <ClInclude Include="src\Helpers.h" />
+    <ClInclude Include="src\vendor\stbi_image_write.h" />
     <ClInclude Include="src\vendor\stdafx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

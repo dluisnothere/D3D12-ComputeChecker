@@ -3,6 +3,9 @@
 #include "ComputeChecker.h"
 #include <iostream>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "vendor/stbi_image_write.h"
+
 // TODO: initialize the uninitiazlied valeus
 ComputeChecker::ComputeChecker(int numSquaresX, int numSquaresY, UINT windowWidth, UINT windowHeight) :
 	m_numSquaresX(numSquaresX), m_numSquaresY(numSquaresY),
@@ -24,18 +27,29 @@ std::wstring ComputeChecker::GetAssetFullPath(LPCWSTR assetName) {
 
 void ComputeChecker::OnInit() {
 	LoadPipeline();
-	WriteLog("Loaded Pipeline...");
-
 	LoadAssets();
-	WriteLog("Loaded Assets...");
 
-	// Populate the compute command list only once at the beginning
-	PopulateComputeCommandList();
-	WriteLog("Populated Command list...");
+	//// Populate the compute command list only once at the beginning
+	//PopulateComputeCommandList();
 
-	// Execute the compute command list only once at the beginning
-	ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
-	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	//// Execute the compute command list only once at the beginning
+	//ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
+	//m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	//// Copy contents of readback buffer into a png image.
+	//void* pData;
+	//m_readbackBuffer->Map(0, nullptr, &pData);
+	//stbi_write_png("output.png", m_windowWidth, m_windowHeight, 4, pData, m_windowWidth * 4);
+
+	//float* floatData = static_cast<float*>(pData);
+	//for (int i = 0; i < 10; i++) {
+	//	// Convert value to LPCWSTR
+	//	std::wstring logValue = std::to_wstring(floatData[i]) + L"\n";
+
+	//	// Output Log value
+	//	OutputDebugStringW(logValue.c_str());
+	//}
+	//m_readbackBuffer->Unmap(0, nullptr);
 
 	// TODO: this might have to be the compute command list.... not sure
 	// m_graphicsCommandList->ResourceBarrier(1, &barrier);
@@ -151,7 +165,7 @@ bool ComputeChecker::LoadPipeline() {
 	srvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
 	m_device->CreateDescriptorHeap(&srvUavHeapDesc, IID_PPV_ARGS(&m_srvUavHeap));
-	m_srvUavHeap->SetName(L"my srv");
+	m_srvUavHeap->SetName(L"my srvUav");
 
 	m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
@@ -255,8 +269,7 @@ void ComputeChecker::LoadAssets() {
 		textureDesc.SampleDesc.Count = 1;
 		textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
-		D3D12_HEAP_PROPERTIES heapProperties = {};
-		heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+		CD3DX12_HEAP_PROPERTIES heapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
 		m_device->CreateCommittedResource(
 			&heapProperties,
@@ -291,6 +304,46 @@ void ComputeChecker::LoadAssets() {
 		D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = { handleStart.ptr + descriptorSize };
 
 		m_device->CreateUnorderedAccessView(m_checkerTexture.Get(), nullptr, &uavDesc, uavHandle);
+	}
+
+	{
+		// Set up readback buffer
+		D3D12_RESOURCE_DESC readbackBufferDesc = {};
+		readbackBufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		readbackBufferDesc.MipLevels = 1;
+		readbackBufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+		readbackBufferDesc.Width = m_rowPitch * m_windowHeight;
+		readbackBufferDesc.Height = 1;
+		readbackBufferDesc.DepthOrArraySize = 1;
+		readbackBufferDesc.MipLevels = 1;
+		readbackBufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		readbackBufferDesc.SampleDesc.Count = 1;
+		readbackBufferDesc.SampleDesc.Quality = 0;
+
+		CD3DX12_HEAP_PROPERTIES rbHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+		m_device->CreateCommittedResource(
+			&rbHeapProperties,
+			D3D12_HEAP_FLAG_NONE,
+			&readbackBufferDesc,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			nullptr,
+			IID_PPV_ARGS(&m_readbackBuffer)
+		);
+
+		m_src = {};
+		m_src.pResource = m_checkerTexture.Get();
+		m_src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		m_src.SubresourceIndex = 0;
+
+		m_dst = {};
+		m_dst.pResource = m_readbackBuffer.Get();
+		m_dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+		m_dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		m_dst.PlacedFootprint.Footprint.Width = m_windowWidth;
+		m_dst.PlacedFootprint.Footprint.Height = m_windowHeight;
+		m_dst.PlacedFootprint.Footprint.Depth = 1;
+		m_dst.PlacedFootprint.Footprint.RowPitch = m_rowPitch;
+
 	}
 	
 	// Compile the shaders
@@ -436,14 +489,37 @@ void ComputeChecker::OnUpdate() {
 }
 
 void ComputeChecker::OnRender() {
+	// DEBUG AND SEE IF THIS SHOWS UP
+	// Populate the compute command list only once at the beginning
+	PopulateComputeCommandList();
+
+	// Execute the compute command list only once at the beginning
+	ID3D12CommandList* ppCommandLists1[] = { m_computeCommandList.Get() };
+	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists1), ppCommandLists1);
+
+	// Copy contents of readback buffer into a png image.
+	void* pData;
+	m_readbackBuffer->Map(0, nullptr, &pData);
+
+	float* floatData = static_cast<float*>(pData);
+	for (int i = 0; i < 10; i++) {
+		// Convert value to LPCWSTR
+		std::wstring logValue = std::to_wstring(floatData[i]) + L"\n";
+
+		// Output Log value
+		OutputDebugStringW(logValue.c_str());
+	}
+	m_readbackBuffer->Unmap(0, nullptr);
+	// END DEBUG
+
 	// Record all the commands we need to render the scene into the command list
 	PopulateGraphicsCommandList();
 
-	// Execute the command list
+	//// Execute the command list
 	ID3D12CommandList* ppCommandLists[] = { m_graphicsCommandList.Get() };
 	m_graphicsCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	// Present the frame
+	//// Present the frame
 	m_swapChain->Present(1, 0);
 
 	WaitForPreviousFrame();
@@ -532,7 +608,21 @@ void ComputeChecker::PopulateComputeCommandList() {
 
 	// Execute the compute shader
 	m_computeCommandList->SetPipelineState(m_computePipelineState.Get());
+
+	// Set all values of the m_checkerTexture to red. 
+	UINT clearColor[4] = {255, 0, 0, 255 };
+	m_computeCommandList->ClearUnorderedAccessViewUint(m_srvUavHeap->GetGPUDescriptorHandleForHeapStart(), m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), m_checkerTexture.Get(), clearColor, 0, nullptr);
+
+	// Bind texture slot to u0 register?
+	m_computeCommandList->SetComputeRootUnorderedAccessView(0, m_checkerTexture->GetGPUVirtualAddress());
+
 	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
+
+	// Set a resource barrier transition from UAV to CopySource
+	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_checkerTexture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	m_computeCommandList->ResourceBarrier(1, &transition);
+	// CopyTextureRegion to from m_checker to m_readback
+	// m_computeCommandList->CopyTextureRegion(&m_dst, 0, 0, 0, &m_src, nullptr);
 
 	// Close the command list
 	m_computeCommandList->Close();

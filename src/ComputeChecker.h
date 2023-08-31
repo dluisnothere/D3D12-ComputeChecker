@@ -68,6 +68,12 @@ private:
 	ComPtr<ID3D12CommandAllocator> m_computeCommandAllocator;
 	ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
 
+	// Readback buffer
+	ComPtr<ID3D12Resource> m_readbackBuffer;
+	D3D12_TEXTURE_COPY_LOCATION m_src;
+	D3D12_TEXTURE_COPY_LOCATION m_dst;
+	UINT64 m_rowPitch = (m_windowWidth * 4 + 255)& ~255;
+
 	// Texture resource barrier
 	D3D12_RESOURCE_BARRIER m_textureBarrier;
 

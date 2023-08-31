@@ -51,7 +51,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 	case WM_PAINT:
 		if (checkerSample)
 		{
-			checkerSample->OnUpdate();
+			// checkerSample->OnUpdate();
 			checkerSample->OnRender();
 		}
 		return 0;
