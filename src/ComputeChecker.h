@@ -72,6 +72,10 @@ private:
 	ComPtr<ID3D12Resource> m_readbackBuffer;
 	D3D12_TEXTURE_COPY_LOCATION m_src;
 	D3D12_TEXTURE_COPY_LOCATION m_dst;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_uavHandleCpu;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_srvHandleCpu;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_uavHandleGpu;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_srvHandleGpu;
 	UINT64 m_rowPitch = (m_windowWidth * 4 + 255)& ~255;
 
 	// Texture resource barrier

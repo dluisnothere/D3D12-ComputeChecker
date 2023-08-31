@@ -162,7 +162,7 @@ bool ComputeChecker::LoadPipeline() {
 	D3D12_DESCRIPTOR_HEAP_DESC srvUavHeapDesc = {};
 	srvUavHeapDesc.NumDescriptors = 2;
 	srvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	srvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE ;
 
 	m_device->CreateDescriptorHeap(&srvUavHeapDesc, IID_PPV_ARGS(&m_srvUavHeap));
 	m_srvUavHeap->SetName(L"my srvUav");
@@ -282,17 +282,6 @@ void ComputeChecker::LoadAssets() {
 
 		m_checkerTexture->SetName(L"Texture Result");
 
-		// Create SRV for texture
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-		D3D12_CPU_DESCRIPTOR_HANDLE handleStart = m_srvUavHeap->GetCPUDescriptorHandleForHeapStart();
-
-		m_device->CreateShaderResourceView(m_checkerTexture.Get(), &srvDesc, handleStart);
-
 		// Create UAV for texture
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -301,9 +290,21 @@ void ComputeChecker::LoadAssets() {
 
 		// Offset to the next slot
 		size_t descriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = { handleStart.ptr + descriptorSize };
+		m_uavHandleCpu = m_srvUavHeap->GetCPUDescriptorHandleForHeapStart();
+		m_uavHandleGpu = m_srvUavHeap->GetGPUDescriptorHandleForHeapStart();
 
-		m_device->CreateUnorderedAccessView(m_checkerTexture.Get(), nullptr, &uavDesc, uavHandle);
+		m_device->CreateUnorderedAccessView(m_checkerTexture.Get(), nullptr, &uavDesc, m_uavHandleCpu);
+
+		// Create SRV for texture
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		m_srvHandleCpu = { m_uavHandleCpu.ptr + descriptorSize };
+		m_device->CreateShaderResourceView(m_checkerTexture.Get(), &srvDesc, m_srvHandleCpu);
+		m_srvHandleGpu = { m_uavHandleGpu.ptr + descriptorSize };
 	}
 
 	{
@@ -609,12 +610,12 @@ void ComputeChecker::PopulateComputeCommandList() {
 	// Execute the compute shader
 	m_computeCommandList->SetPipelineState(m_computePipelineState.Get());
 
-	// Set all values of the m_checkerTexture to red. 
-	UINT clearColor[4] = {255, 0, 0, 255 };
-	m_computeCommandList->ClearUnorderedAccessViewUint(m_srvUavHeap->GetGPUDescriptorHandleForHeapStart(), m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), m_checkerTexture.Get(), clearColor, 0, nullptr);
+	// Set descriptor heaps
+	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get() };
+	m_computeCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
-	// Bind texture slot to u0 register?
-	m_computeCommandList->SetComputeRootUnorderedAccessView(0, m_checkerTexture->GetGPUVirtualAddress());
+	// Set compute root descriptor table
+	m_computeCommandList->SetComputeRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
 	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
 
