@@ -19,8 +19,8 @@ SamplerState sampler0 : register(s0);
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    return float4(1.0, 0.0, 1.0, 1.0);
-	// return texture0.Sample(sampler0, input.texcoord);
+    // return float4(1.0, 0.0, 1.0, 1.0);
+	return texture0.Sample(sampler0, input.texcoord);
 }
 
 // The RWTexture where the shader writes the checkerboard pattern

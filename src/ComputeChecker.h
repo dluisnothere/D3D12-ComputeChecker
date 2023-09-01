@@ -68,8 +68,8 @@ private:
 	ComPtr<ID3D12CommandAllocator> m_computeCommandAllocator;
 	ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
 
-	// Readback buffer
-	ComPtr<ID3D12Resource> m_readbackBuffer;
+	// CPU and GPU handles
+	D3D12_CPU_DESCRIPTOR_HANDLE m_samplerHandle;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_uavHandleCpu;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_srvHandleCpu;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_uavHandleGpu;
@@ -81,6 +81,7 @@ private:
 
 	// used in the graphics pipeline
 	ComPtr<ID3D12CommandQueue> m_graphicsCommandQueue;
+	ComPtr<ID3D12DescriptorHeap> m_samplerHeap;
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
 	ComPtr<ID3D12Resource> m_renderTargets[Framecount];
 	ComPtr<ID3D12RootSignature> m_graphicsRootSignature;

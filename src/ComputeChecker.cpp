@@ -29,14 +29,14 @@ void ComputeChecker::OnInit() {
 	LoadPipeline();
 	LoadAssets();
 
-	//// Populate the compute command list only once at the beginning
-	//PopulateComputeCommandList();
+	// Populate the compute command list only once at the beginning
+	PopulateComputeCommandList();
 
-	//// Execute the compute command list only once at the beginning
-	//ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
-	//m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	// Execute the compute command list only once at the beginning
+	ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
+	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	//// Copy contents of readback buffer into a png image.
+	// Copy contents of readback buffer into a png image.
 	//void* pData;
 	//m_readbackBuffer->Map(0, nullptr, &pData);
 	//stbi_write_png("output.png", m_windowWidth, m_windowHeight, 4, pData, m_windowWidth * 4);
@@ -169,6 +169,15 @@ bool ComputeChecker::LoadPipeline() {
 
 	m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+	// Create Sampler descriptor heap
+	D3D12_DESCRIPTOR_HEAP_DESC samplerHeapDesc = {};
+	samplerHeapDesc.NumDescriptors = 1;
+	samplerHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	samplerHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+	m_device->CreateDescriptorHeap(&samplerHeapDesc, IID_PPV_ARGS(&m_samplerHeap));
+	m_samplerHeap->SetName(L"sampler heap");
+
 	// create frame resources
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -259,6 +268,21 @@ void ComputeChecker::LoadAssets() {
 
 	// Create the texture that the compute shader will write its results to
 	{
+		// Create the texture sampler
+		D3D12_SAMPLER_DESC samplerDesc = {};
+		samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+		samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		samplerDesc.MinLOD = 0;
+		samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+		samplerDesc.MipLODBias = 0.0f;
+		samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+		samplerDesc.BorderColor[0] = samplerDesc.BorderColor[1] = samplerDesc.BorderColor[2] = samplerDesc.BorderColor[3] = 0;
+
+		m_samplerHandle = m_samplerHeap->GetCPUDescriptorHandleForHeapStart();
+		m_device->CreateSampler(&samplerDesc, m_samplerHandle);
+
 		D3D12_RESOURCE_DESC textureDesc = {};
 		textureDesc.MipLevels = 1;
 		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -305,31 +329,6 @@ void ComputeChecker::LoadAssets() {
 		m_srvHandleCpu = { m_uavHandleCpu.ptr + descriptorSize };
 		m_device->CreateShaderResourceView(m_checkerTexture.Get(), &srvDesc, m_srvHandleCpu);
 		m_srvHandleGpu = { m_uavHandleGpu.ptr + descriptorSize };
-	}
-
-	{
-		// Set up readback buffer
-		D3D12_RESOURCE_DESC readbackBufferDesc = {};
-		readbackBufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		readbackBufferDesc.MipLevels = 1;
-		readbackBufferDesc.Format = DXGI_FORMAT_UNKNOWN;
-		readbackBufferDesc.Width = m_rowPitch * m_windowHeight;
-		readbackBufferDesc.Height = 1;
-		readbackBufferDesc.DepthOrArraySize = 1;
-		readbackBufferDesc.MipLevels = 1;
-		readbackBufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		readbackBufferDesc.SampleDesc.Count = 1;
-		readbackBufferDesc.SampleDesc.Quality = 0;
-
-		CD3DX12_HEAP_PROPERTIES rbHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
-		m_device->CreateCommittedResource(
-			&rbHeapProperties,
-			D3D12_HEAP_FLAG_NONE,
-			&readbackBufferDesc,
-			D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr,
-			IID_PPV_ARGS(&m_readbackBuffer)
-		);
 	}
 	
 	// Compile the shaders
@@ -390,10 +389,10 @@ void ComputeChecker::LoadAssets() {
 
 	// Create the vertexbuffer, which should just be a quad that fits the screen
 	Vertex screenQuadVertices[] = {
-		{-0.5f, -1.0f, 0.0f, 0.0f},
-		{-1.0f,  1.0f, 0.0f, 0.0f},
-		{ 1.0f,  1.0f, 0.0f, 0.0f},
-		{ 1.0f, -1.0f, 0.0f, 0.0f},
+		{-1.0f, -1.0f, 0.0f, 0.0f},
+		{-1.0f,  1.0f, 0.0f, 1.0f},
+		{ 1.0f,  1.0f, 1.0f, 1.0f},
+		{ 1.0f, -1.0f, 1.0f, 0.0f},
 	};
 
 	// Indices for the quad
@@ -475,30 +474,6 @@ void ComputeChecker::OnUpdate() {
 }
 
 void ComputeChecker::OnRender() {
-	// DEBUG AND SEE IF THIS SHOWS UP
-	// TODO: move this to the OnInit() function eventually
-	// Populate the compute command list only once at the beginning
-	PopulateComputeCommandList();
-
-	// Execute the compute command list only once at the beginning
-	ID3D12CommandList* ppCommandLists1[] = { m_computeCommandList.Get() };
-	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists1), ppCommandLists1);
-
-	// Copy contents of readback buffer into a png image.
-	void* pData;
-	m_readbackBuffer->Map(0, nullptr, &pData);
-
-	float* floatData = static_cast<float*>(pData);
-	for (int i = 0; i < 10; i++) {
-		// Convert value to LPCWSTR
-		std::wstring logValue = std::to_wstring(floatData[i]) + L"\n";
-
-		// Output Log value
-		OutputDebugStringW(logValue.c_str());
-	}
-	m_readbackBuffer->Unmap(0, nullptr);
-	// END DEBUG
-
 	// Record all the commands we need to render the scene into the command list
 	PopulateGraphicsCommandList();
 
@@ -528,15 +503,19 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	// They must be reset before re-recording
 	m_graphicsCommandList->Reset(m_graphicsCommandAllocator.Get(), m_computePipelineState.Get());
 
-	// Set neccessary state
-	m_graphicsCommandList->SetPipelineState(m_graphicsPipelineState.Get());
 	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
+	// Set neccessary state
+	m_graphicsCommandList->SetPipelineState(m_graphicsPipelineState.Get());
+
+	// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
+	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get(), m_samplerHeap.Get()}; // TODO: refactor m_samplerHeap->GetCPUDescriptorHandleForHeapStart() into a variable
+	m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+	m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvHandleGpu);
+	m_graphicsCommandList->SetGraphicsRootDescriptorTable(1, m_samplerHeap->GetGPUDescriptorHandleForHeapStart());
+
 	if (!m_textureTransitioned) {
-		// TODO: might have to move this. This line binds the completed texture from the compute shader to the pixel shader
-		ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get() };
-		m_graphicsCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-		m_graphicsCommandList->SetGraphicsRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
 		D3D12_RESOURCE_BARRIER textureBarrier = {};
 		textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -571,8 +550,6 @@ void ComputeChecker::PopulateGraphicsCommandList() {
 	m_graphicsCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
 	m_graphicsCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
-	// Set neccessary state
-	m_graphicsCommandList->SetGraphicsRootSignature(m_graphicsRootSignature.Get());
 
 	// Back buffer will now present
 	CD3DX12_RESOURCE_BARRIER transition2 = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -604,16 +581,7 @@ void ComputeChecker::PopulateComputeCommandList() {
 	// It's telling the root descriptor that the table should be placed on the 0th index
 	m_computeCommandList->SetComputeRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
-	// Bind texture slot to u0 register?
-	// m_computeCommandList->SetComputeRootUnorderedAccessView(0, m_checkerTexture->GetGPUVirtualAddress());
-
 	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
-
-	// Set a resource barrier transition from UAV to CopySource
-	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_checkerTexture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_computeCommandList->ResourceBarrier(1, &transition);
-	// CopyTextureRegion to from m_checker to m_readback
-	// m_computeCommandList->CopyTextureRegion(&m_dst, 0, 0, 0, &m_src, nullptr);
 
 	// Close the command list
 	m_computeCommandList->Close();
