@@ -20,6 +20,12 @@ struct Vertex {
 	float u, v; // texture coordinates
 };
 
+struct Constants {
+	int squareSize;
+	int numSquaresX;
+	int numSquaresY;
+};
+
 /// <summary>
 /// This class generates a checkerboard pattern with input X and Y values
 /// using a compute shader to generate a texture, then rendering that texture.
@@ -29,6 +35,9 @@ public:
 	// Windows variable
 	HWND m_hwnd;
 private:
+	// Size of square
+	int m_squareSize;
+
 	// Variables for number of squares horizontally
 	int m_numSquaresX;
 
@@ -84,6 +93,10 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_samplerHeap;
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
 	ComPtr<ID3D12Resource> m_renderTargets[Framecount];
+
+	// Struct: height, width, square size
+	ComPtr<ID3D12Resource> m_constantBuffer;
+
 	ComPtr<ID3D12RootSignature> m_graphicsRootSignature;
 	ComPtr<ID3D12PipelineState> m_graphicsPipelineState;
 	UINT m_rtvDescriptorSize;
@@ -114,7 +127,7 @@ public:
 	/// <summary>
 	/// Constructor
 	/// </summary>
-	ComputeChecker(int numSquareX, int numSquaresY, UINT windowWidth, UINT windowHeight);
+	ComputeChecker(int squareSize, int numSquareX, int numSquaresY, UINT windowWidth, UINT windowHeight);
 
 	void OnInit();
 

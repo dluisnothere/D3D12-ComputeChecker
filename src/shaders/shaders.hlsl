@@ -24,17 +24,27 @@ float4 PSMain(PSInput input) : SV_TARGET
 }
 
 // The RWTexture where the shader writes the checkerboard pattern
+struct Constants {
+    int squareSize;
+    int numSquaresX;
+    int numSquaresY;
+};
+
 RWTexture2D<float4> outTexture : register(u0);
+cbuffer ConstantBuffer : register(b0)
+{
+    Constants constants;
+}
 
 [numthreads(1, 1, 1)]
 void CSMain( uint3 DTid : SV_DispatchThreadID )
 {
     // Define the size of the checkerboard squares
-    int squareSize = 10;
+    // int squareSize = 10;
 
     // Calculate which square the current pixel falls into
-    int squareX = DTid.x / squareSize;
-    int squareY = DTid.y / squareSize;
+    int squareX = DTid.x / constants.squareSize;
+    int squareY = DTid.y / constants.squareSize;
 
     // Determine the color of the square
     bool isWhite = (squareX % 2) == (squareY % 2);

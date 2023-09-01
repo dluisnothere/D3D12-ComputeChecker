@@ -12,10 +12,11 @@
 // #include "Helpers.h"
 
 #define FRAMES 2
-#define WIDTH 1200
-#define HEIGHT 800
-#define NUM_SQUARES_X 2
-#define NUM_SQUARES_Y 2
+#define SQUARE_SIZE 10
+#define NUM_SQUARES_X 10
+#define NUM_SQUARES_Y 10
+#define WIDTH SQUARE_SIZE * NUM_SQUARES_X
+#define HEIGHT SQUARE_SIZE * NUM_SQUARES_Y
 
 using namespace Microsoft::WRL;
 
@@ -67,7 +68,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 
 _Use_decl_annotations_
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-	ComputeChecker checkerSample = ComputeChecker(NUM_SQUARES_X, NUM_SQUARES_Y, WIDTH, HEIGHT);
+	ComputeChecker checkerSample = ComputeChecker(SQUARE_SIZE, NUM_SQUARES_X, NUM_SQUARES_Y, WIDTH, HEIGHT);
 
 	// Create a window
 	WNDCLASSEX windowClass = { 0 };

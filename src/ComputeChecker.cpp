@@ -7,7 +7,8 @@
 #include "vendor/stbi_image_write.h"
 
 // TODO: initialize the uninitiazlied valeus
-ComputeChecker::ComputeChecker(int numSquaresX, int numSquaresY, UINT windowWidth, UINT windowHeight) :
+ComputeChecker::ComputeChecker(int squareSize, int numSquaresX, int numSquaresY, UINT windowWidth, UINT windowHeight) :
+	m_squareSize(squareSize),
 	m_numSquaresX(numSquaresX), m_numSquaresY(numSquaresY),
 	m_windowWidth(windowWidth), m_windowHeight(windowHeight),
 	m_viewport(0.0f, 0.0f, static_cast<float>(windowWidth), static_cast<float>(windowHeight)),
@@ -36,23 +37,6 @@ void ComputeChecker::OnInit() {
 	ID3D12CommandList* ppCommandLists[] = { m_computeCommandList.Get() };
 	m_computeCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	// Copy contents of readback buffer into a png image.
-	//void* pData;
-	//m_readbackBuffer->Map(0, nullptr, &pData);
-	//stbi_write_png("output.png", m_windowWidth, m_windowHeight, 4, pData, m_windowWidth * 4);
-
-	//float* floatData = static_cast<float*>(pData);
-	//for (int i = 0; i < 10; i++) {
-	//	// Convert value to LPCWSTR
-	//	std::wstring logValue = std::to_wstring(floatData[i]) + L"\n";
-
-	//	// Output Log value
-	//	OutputDebugStringW(logValue.c_str());
-	//}
-	//m_readbackBuffer->Unmap(0, nullptr);
-
-	// TODO: this might have to be the compute command list.... not sure
-	// m_graphicsCommandList->ResourceBarrier(1, &barrier);
 }
 
 bool ComputeChecker::LoadPipeline() {
@@ -217,14 +201,14 @@ void ComputeChecker::LoadAssets() {
 		samplerRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
 		// Create root parameter for SRV and sampler
-		D3D12_ROOT_PARAMETER rootParameters[2] = {
+		D3D12_ROOT_PARAMETER rootParametersList[2] = {
 			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, {1, &srvRange}, D3D12_SHADER_VISIBILITY_PIXEL },
 			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, {1, &samplerRange}, D3D12_SHADER_VISIBILITY_PIXEL }
 		};
 
 		CD3DX12_ROOT_SIGNATURE_DESC gRootSignatureDesc;
 		gRootSignatureDesc.NumParameters = 2;
-		gRootSignatureDesc.pParameters = rootParameters;
+		gRootSignatureDesc.pParameters = rootParametersList;
 		gRootSignatureDesc.NumStaticSamplers = 0;
 		gRootSignatureDesc.pStaticSamplers = nullptr;
 		gRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -247,15 +231,23 @@ void ComputeChecker::LoadAssets() {
 
 		// Root parameter for descriptor table
 		// DescriptorTable for compute pipeline UAV.
-		D3D12_ROOT_PARAMETER rootParameter = {};
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRange;
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+		D3D12_ROOT_PARAMETER descriptorTableRootParam = {};
+		descriptorTableRootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		descriptorTableRootParam.DescriptorTable.NumDescriptorRanges = 1;
+		descriptorTableRootParam.DescriptorTable.pDescriptorRanges = &descriptorRange;
+		descriptorTableRootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+		D3D12_ROOT_PARAMETER constantBuffRootParam = {};
+		constantBuffRootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		constantBuffRootParam.Descriptor.RegisterSpace = 0; // register b0
+		constantBuffRootParam.Descriptor.ShaderRegister = 0;
+		constantBuffRootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+		D3D12_ROOT_PARAMETER rootParametersList[2] = { descriptorTableRootParam, constantBuffRootParam };
 
 		CD3DX12_ROOT_SIGNATURE_DESC cRootSignatureDesc;
-		cRootSignatureDesc.NumParameters = 1;
-		cRootSignatureDesc.pParameters = &rootParameter;
+		cRootSignatureDesc.NumParameters = 2;
+		cRootSignatureDesc.pParameters = rootParametersList;
 		cRootSignatureDesc.NumStaticSamplers = 0;
 		cRootSignatureDesc.pStaticSamplers = nullptr;
 		cRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
@@ -387,69 +379,101 @@ void ComputeChecker::LoadAssets() {
 	m_computeCommandList->Close();
 	m_graphicsCommandList->Close();
 
-	// Create the vertexbuffer, which should just be a quad that fits the screen
-	Vertex screenQuadVertices[] = {
-		{-1.0f, -1.0f, 0.0f, 0.0f},
-		{-1.0f,  1.0f, 0.0f, 1.0f},
-		{ 1.0f,  1.0f, 1.0f, 1.0f},
-		{ 1.0f, -1.0f, 1.0f, 0.0f},
-	};
+	// Set up the inputs to the compute shader 
+	{
+		Constants computeConstants = {
+			m_squareSize, m_numSquaresX, m_numSquaresY
+		};
 
-	// Indices for the quad
-	uint16_t screenQuadIndices[] = {
-		0, 1, 2,
-		0, 2, 3
-	};
+		UINT64 constantBufferSize = sizeof(computeConstants);
+		UINT64 manual = sizeof(int) * 3;
 
-	const UINT vertexCount = 4;
-	const UINT64 vertexBufferSize = sizeof(Vertex) * vertexCount;
+		// TODO: refactor so there's only one instance of this kind of heap prop and gets used
+		CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);
+		m_device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&bufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_constantBuffer));
 
-	const UINT indexCount = 6;
+		// copy the constant data to the buffer
+		UINT8* pConstantDataBegin;
+		CD3DX12_RANGE readRange(0, 0);
+		m_constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pConstantDataBegin));
+		memcpy(pConstantDataBegin, &computeConstants, sizeof(computeConstants));
+		m_constantBuffer->Unmap(0, nullptr);
 
-	// TODO: Optimize this by using default heaps instead of upload heaps
-	// Create  the vertex buffer committed resource
-	CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
-	m_device->CreateCommittedResource(
-		&heapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&bufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_vertexBuffer));
+		// No need to make a formal buffer view. 
+	}
 
-	// Create the index buffer committed resource using the same heap properties as the vertex buffer
-	CD3DX12_RESOURCE_DESC indexBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(screenQuadIndices));
-	m_device->CreateCommittedResource(
-		&heapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&indexBufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_indexBuffer));
+	// Create inputs to the vertex shader
+	{
+		Vertex screenQuadVertices[] = {
+			{-1.0f, -1.0f, 0.0f, 0.0f},
+			{-1.0f,  1.0f, 0.0f, 1.0f},
+			{ 1.0f,  1.0f, 1.0f, 1.0f},
+			{ 1.0f, -1.0f, 1.0f, 0.0f},
+		};
 
-	// Copy the vertex data to the vertex buffer
-	UINT8* vertexDataBegin;
-	CD3DX12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU.
-	m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&vertexDataBegin));
-	memcpy(vertexDataBegin, screenQuadVertices, sizeof(screenQuadVertices));
-	m_vertexBuffer->Unmap(0, nullptr);
+		// Indices for the quad
+		uint16_t screenQuadIndices[] = {
+			0, 1, 2,
+			0, 2, 3
+		};
 
-	// Initialize vertex buffer view
-	m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
-	m_vertexBufferView.StrideInBytes = sizeof(Vertex);
-	m_vertexBufferView.SizeInBytes = vertexBufferSize;
+		const UINT vertexCount = 4;
+		const UINT64 vertexBufferSize = sizeof(Vertex) * vertexCount;
 
-	// Copy the index data to the index buffer
-	UINT8* indexDataBegin;
-	m_indexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&indexDataBegin));
-	memcpy(indexDataBegin, screenQuadIndices, sizeof(screenQuadIndices));
-	m_indexBuffer->Unmap(0, nullptr);
+		const UINT indexCount = 6;
 
-	// Initialize index buffer view
-	m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
-	m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-	m_indexBufferView.SizeInBytes = sizeof(uint16_t) * indexCount;
+		// TODO: Optimize this by using default heaps instead of upload heaps
+		// Create  the vertex buffer committed resource
+		CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
+		m_device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&bufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_vertexBuffer));
+
+		// Create the index buffer committed resource using the same heap properties as the vertex buffer
+		CD3DX12_RESOURCE_DESC indexBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(screenQuadIndices));
+		m_device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&indexBufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_indexBuffer));
+
+		// Copy the vertex data to the vertex buffer
+		UINT8* vertexDataBegin;
+		CD3DX12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU.
+		m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&vertexDataBegin));
+		memcpy(vertexDataBegin, screenQuadVertices, sizeof(screenQuadVertices));
+		m_vertexBuffer->Unmap(0, nullptr);
+
+		// Initialize vertex buffer view
+		m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+		m_vertexBufferView.StrideInBytes = sizeof(Vertex);
+		m_vertexBufferView.SizeInBytes = vertexBufferSize;
+
+		// Copy the index data to the index buffer
+		UINT8* indexDataBegin;
+		m_indexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&indexDataBegin));
+		memcpy(indexDataBegin, screenQuadIndices, sizeof(screenQuadIndices));
+		m_indexBuffer->Unmap(0, nullptr);
+
+		// Initialize index buffer view
+		m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+		m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+		m_indexBufferView.SizeInBytes = sizeof(uint16_t) * indexCount;
+	}
 
 
 	// Create synchronization objects adn wait until assets have been uploaded to the GPU
@@ -580,6 +604,9 @@ void ComputeChecker::PopulateComputeCommandList() {
 	// Set compute root descriptor table
 	// It's telling the root descriptor that the table should be placed on the 0th index
 	m_computeCommandList->SetComputeRootDescriptorTable(0, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
+
+	// Set compute root constant buffer view
+	m_computeCommandList->SetComputeRootConstantBufferView(1, m_constantBuffer->GetGPUVirtualAddress());
 
 	m_computeCommandList->Dispatch(m_windowWidth, m_windowHeight, 1);
 
