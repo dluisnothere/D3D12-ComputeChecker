@@ -12,11 +12,11 @@
 // #include "Helpers.h"
 
 #define FRAMES 2
-#define SQUARE_SIZE 10
-#define NUM_SQUARES_X 10
-#define NUM_SQUARES_Y 10
-#define WIDTH SQUARE_SIZE * NUM_SQUARES_X
-#define HEIGHT SQUARE_SIZE * NUM_SQUARES_Y
+#define SQUARE_SIZE 30
+#define NUM_SQUARES_X 30
+#define NUM_SQUARES_Y 30
+#define WIDTH (SQUARE_SIZE * NUM_SQUARES_X)
+#define HEIGHT (SQUARE_SIZE * NUM_SQUARES_Y)
 
 using namespace Microsoft::WRL;
 
@@ -83,6 +83,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	RECT windowRect = { 0, 0, static_cast<LONG>(WIDTH), static_cast<LONG>(HEIGHT)};
 	AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
 
+	int titleBarHeight = GetSystemMetrics(SM_CYCAPTION);
+
 	checkerSample.m_hwnd = CreateWindowEx(NULL,
 		windowClass.lpszClassName,
 		L"Compute Checker Window",
@@ -90,7 +92,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		100,
 		100,
 		WIDTH,
-		HEIGHT,
+		HEIGHT + titleBarHeight,
 		nullptr,
 		nullptr,
 		hInstance,
